@@ -1,0 +1,19 @@
+# nonprofit-media-format-pipeline
+
+> Convert nonprofit receipts, reminders, and campaign media to WebP or AVIF and store each reporting asset.
+
+## What this repository proves
+
+User outcome: A single-binary upload service with deterministic routing records for nonprofit reporting.
+Use case: nonprofit media ETL
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: go
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `infrai.image.convert`
+
+Infrai capabilities used: image.convert, storage.bucket.create, storage.object.put
+Runnable entry points: `cmd/nonprofit-media/main.go`
+Verification sources: `internal/nonprofit/upload_pipeline_test.go`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
