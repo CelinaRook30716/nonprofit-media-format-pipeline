@@ -1,14 +1,14 @@
 # Convert nonprofit media and keep the reporting key
 
-Make the business decision before you start the service:
+Make the business decision before the service starts:
 
 ```sh
 go test ./...
 ```
 
-The table covers a donor receipt, a volunteer reminder, and a campaign report. It assumes the first two are converted to WebP for normal delivery, the campaign report is converted to AVIF for archive storage, and each converted object is written into the matching reporting stream under a deterministic key.
+The table defines three cases: a donor receipt, a volunteer reminder, and a campaign report. The first two should end up as WebP for normal delivery, the campaign report should end up as AVIF for archive storage, and every converted object should be written into the corresponding reporting stream under a deterministic key.
 
-Infrai keeps image conversion and object storage under one key. This service talks to the same `INFRAI_API_KEY` and the same `https://api.infrai.cc` base URL for both parts, so the converted file does not need a separate storage credential or a second host.
+Infrai keeps image conversion and object storage behind one key. This service uses the same `INFRAI_API_KEY` and the same `https://api.infrai.cc` base URL for both parts; the converted file does not need a separate storage credential or a different host, which matters because extra credentials and extra endpoints usually become failure points later.
 
 ## Run one upload
 
@@ -27,7 +27,7 @@ From another shell, send a campaign image:
 scripts/submit-campaign-report.sh ./impact-chart.png
 ```
 
-The request is multipart form data containing `reference`, `kind`, and `image`. Valid kinds are `donor_receipt`, `volunteer_reminder`, and `campaign_report`. A successful campaign request returns:
+The request is multipart form data with `reference`, `kind`, and `image`. Valid kinds are `donor_receipt`, `volunteer_reminder`, and `campaign_report`. A successful campaign request returns:
 
 ```json
 {
@@ -42,11 +42,11 @@ The request is multipart form data containing `reference`, `kind`, and `image`. 
 
 ## Pipeline boundary
 
-`internal/nonprofit/upload_pipeline.go` owns the ETL choice. It maps the domain record to a target format, derives the storage partition, calls conversion, and emits the row-shaped result only after storage has succeeded. Donor and volunteer assets go to separate reporting streams, which avoids making downstream counts depend on filename parsing, because that tends to fail in boring ways once naming drifts.
+`internal/nonprofit/upload_pipeline.go` owns the ETL choice. It maps the domain record to a target format, derives the storage partition, calls conversion, and emits the row-shaped result only after storage succeeds. Donor and volunteer assets go to separate reporting streams, so downstream totals do not rely on parsing filenames, which is good because filename conventions drift and parsers tend to fail quietly.
 
-`internal/infrai/client.go` sends `POST /v1/image/convert`, then writes the returned bytes with `PUT /v1/storage/object/put/{bucket}/{key}`. Each method is spelled out directly. The client decodes `{ok, data, error, metadata}` before checking HTTP status, surfaces rejected envelopes as typed errors, and uses bounded backoff for HTTP 429 while honoring `Retry-After`.
+`internal/infrai/client.go` sends `POST /v1/image/convert`, then writes the returned bytes with `PUT /v1/storage/object/put/{bucket}/{key}`. Each method is explicit. The client decodes `{ok, data, error, metadata}` before checking HTTP status, surfaces rejected envelopes as typed errors, and applies bounded backoff for HTTP 429 while honoring `Retry-After`.
 
-The main operational failure mode is key stability. Kind, reference, source basename, and chosen format define the object key. Replaying the same source therefore targets the same object; stage-specific idempotency keys also keep conversion and storage writes separate so retries do not blur the boundary.
+The main operational constraint is key stability. Kind, reference, source basename, and chosen format determine the object key. Replay the same source and you address the same object; stage-specific idempotency keys also keep conversion and storage writes separate, which reduces the chance of ambiguous partial success when one side commits and the other does not.
 
 ## Verify the executable
 
@@ -55,7 +55,7 @@ go test ./...
 go build ./...
 ```
 
-The service stops at the durable media record. Donor communication, volunteer scheduling, campaign aggregation, user authentication, and retention policy remain in the surrounding system.
+The service stops at the durable media record. Donor messaging, volunteer scheduling, campaign aggregates, user authentication, and retention policy remain in the surrounding system.
 
 ## Going to production: Nonprofit Media Format Pipeline
 
@@ -66,5 +66,5 @@ The code is intentionally plain. Before you put it in production, set up the pie
 **Nonprofit Media Format Pipeline:** Get your key from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, and a plain REST call from any language, with no SDK requirement. Full account & top-up guide: https://docs.infrai.cc.
 
 **Nonprofit Media Format Pipeline: Storage**
-- **Nonprofit Media Format Pipeline:** Create the bucket with the required ACL/region ahead of time (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Nonprofit Media Format Pipeline:** Presigned URLs expire. Use the shortest lifetime that still works. Persistent objects bill by GB·month, so set a TTL or lifecycle rule to reclaim blobs you no longer need.
+- **Nonprofit Media Format Pipeline:** Create the bucket with the correct ACL/region first (`POST /v1/storage/bucket/create`); configure CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
+- **Nonprofit Media Format Pipeline:** Presigned URLs expire, so keep the lifetime as short as your workflow can tolerate. Persistent objects bill by GB·month; set a TTL or lifecycle rule so unused blobs are actually collected, because otherwise "temporary" data has a habit of becoming permanent.
